@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ASR 多模型对比平台</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --accent: #58a6ff;
+      --accent2: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --text: #e6edf3;
+      --text2: #8b949e;
+      --radius: 8px;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; min-height: 100vh; padding: 24px; }
+    h1 { text-align: center; font-size: 1.6rem; margin-bottom: 8px; color: var(--accent); }
+    .subtitle { text-align: center; color: var(--text2); font-size: 0.9rem; margin-bottom: 28px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 18px; }
+    .section-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text2); margin-bottom: 14px; }
+
+    /* Model selector */
+    .model-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .model-checkbox { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; cursor: pointer; transition: border-color .15s, background .15s; user-select: none; }
+    .model-checkbox:hover { border-color: var(--accent); }
+    .model-checkbox input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+    .model-checkbox .badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: var(--bg); color: var(--text2); margin-left: 4px; }
+    .model-checkbox.loaded .badge { background: rgba(63,185,80,.15); color: var(--accent2); }
+    .select-all-btn { background: none; border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 0.8rem; transition: color .15s, border-color .15s; }
+    .select-all-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* Upload zone */
+    .upload-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; position: relative; }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,.04); }
+    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .upload-icon { font-size: 2.5rem; margin-bottom: 10px; }
+    .upload-label { color: var(--text2); font-size: 0.95rem; }
+    .upload-label span { color: var(--accent); text-decoration: underline; }
+    .file-selected { color: var(--accent2); font-size: 0.9rem; margin-top: 8px; font-weight: 500; }
+
+    /* Example audio */
+    .examples-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+    .example-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; flex: 1; min-width: 280px; max-width: 480px; }
+    .example-card-title { font-size: 0.85rem; font-weight: 600; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .example-card audio { width: 100%; margin-bottom: 10px; accent-color: var(--accent); }
+    .example-card audio::-webkit-media-controls-panel { background: var(--surface); }
+    .example-ref { font-size: 0.78rem; color: var(--text2); line-height: 1.55; border-left: 2px solid var(--border); padding-left: 10px; margin-bottom: 10px; font-style: italic; }
+    .example-ref strong { color: var(--text2); font-style: normal; font-size: 0.7rem; display: block; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+    .btn-use-example { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: 6px 14px; font-size: 0.82rem; cursor: pointer; transition: background .15s, color .15s; font-weight: 500; }
+    .btn-use-example:hover { background: var(--accent); color: #000; }
+
+    /* Recorder */
+    .recorder-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+    .btn { padding: 9px 20px; border-radius: 6px; border: none; font-size: 0.9rem; cursor: pointer; font-weight: 500; transition: opacity .15s, transform .1s; }
+    .btn:hover { opacity: .85; }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-danger { background: var(--err); color: #fff; }
+    .btn-success { background: var(--accent2); color: #000; }
+    .btn-outline { background: none; border: 1px solid var(--border); color: var(--text); }
+    .btn:disabled { opacity: .4; cursor: default; }
+    .rec-indicator { display: inline-flex; align-items: center; gap: 6px; color: var(--err); font-size: 0.85rem; }
+    .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .timer { font-size: 0.85rem; color: var(--text2); font-variant-numeric: tabular-nums; }
+
+    /* Results */
+    .results-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    .results-table th { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text2); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; }
+    .results-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .results-table tr:last-child td { border-bottom: none; }
+    .results-table tr:hover td { background: var(--surface2); }
+    .model-name { font-weight: 600; white-space: nowrap; }
+    .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .status-ok { background: rgba(63,185,80,.15); color: var(--accent2); }
+    .status-err { background: rgba(248,81,73,.15); color: var(--err); }
+    .status-wait { background: rgba(88,166,255,.12); color: var(--accent); }
+    .text-cell { max-width: 480px; }
+    .text-content { color: var(--text); line-height: 1.55; }
+    .text-content.collapsed { max-height: 4.5em; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent); mask-image: linear-gradient(180deg, #000 60%, transparent); }
+    .expand-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.78rem; margin-top: 4px; padding: 0; }
+    .duration { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .error-text { color: var(--err); font-size: 0.8rem; margin-top: 4px; }
+
+    /* Skeleton loader */
+    .skeleton { background: linear-gradient(90deg, var(--surface2) 25%, var(--surface) 50%, var(--surface2) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 4px; height: 1em; }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    .skeleton-row td .skeleton { height: 18px; width: 80%; }
+
+    .submit-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .progress-text { color: var(--text2); font-size: 0.85rem; }
+    .empty-state { text-align: center; padding: 40px; color: var(--text2); }
+    .empty-icon { font-size: 2rem; margin-bottom: 8px; }
+
+    @media (max-width: 600px) {
+      body { padding: 12px; }
+      .results-table th:nth-child(3), .results-table td:nth-child(3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>🎙️ ASR 多模型对比平台</h1>
+<p class="subtitle">上传音频或录音，同时跑多个 ASR 模型，对比识别效果</p>
+
+<!-- Model selector -->
+<div class="card">
+  <div class="section-title">选择模型</div>
+  <div class="model-grid" id="modelGrid"></div>
+  <div style="margin-top:12px">
+    <button class="select-all-btn" id="selectAllBtn" onclick="toggleSelectAll()">全选</button>
+    <span id="modelStatus" style="margin-left:12px;font-size:.8rem;color:var(--text2)"></span>
+  </div>
+</div>
+
+<!-- Input area -->
+<div class="card">
+  <div class="section-title">音频输入</div>
+
+  <div class="upload-zone" id="uploadZone"
+    ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+    <input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aac,.wma,.opus,.webm" onchange="onFileChange(event)"/>
+    <div class="upload-icon">📂</div>
+    <div class="upload-label">拖拽音频文件到此处，或 <span>点击选择</span></div>
+    <div class="upload-label" style="margin-top:4px;font-size:.8rem">支持 WAV / MP3 / M4A / OGG / FLAC / AAC / OPUS / WebM</div>
+    <div class="file-selected" id="fileSelected" style="display:none"></div>
+  </div>
+
+  <div class="recorder-row">
+    <button class="btn btn-outline" id="recBtn" onclick="toggleRecording()">🎤 开始录音</button>
+    <div class="rec-indicator" id="recIndicator" style="display:none">
+      <span class="rec-dot"></span> 录音中
+    </div>
+    <span class="timer" id="recTimer" style="display:none">00:00</span>
+    <button class="btn btn-outline" id="playRecBtn" style="display:none" onclick="playRecording()">▶ 播放录音</button>
+  </div>
+</div>
+
+<!-- Example audio -->
+<div class="card">
+  <div class="section-title">示例音频</div>
+  <div class="examples-grid" id="examplesGrid">
+
+    <div class="example-card">
+      <div class="example-card-title">🎵 示例：普通话（17秒）</div>
+      <audio controls preload="metadata" src="/static/examples/example_zh.wav"></audio>
+      <div class="example-ref">
+        <strong>参考文本 (Ground Truth)</strong>
+        当我做工业，我在朝廷呢，我在当大务的时候呢，每个生活的苦难的时候呢，证明了什么？他对于自己一生的肯定，是他吃苦的那个时候，而不是他高光时刻。但是你要明白的是，恰恰是他的挚爱时刻。
+      </div>
+      <button class="btn-use-example" onclick="useExample('/static/examples/example_zh.wav', 'example_zh.wav')">
+        ▶ 用此音频测试
+      </button>
+    </div>
+
+    <!-- 更多示例：将文件放入 static/examples/ 后在此处添加卡片 -->
+
+  </div>
+</div>
+
+<!-- Submit -->
+<div class="card">
+  <div class="submit-row">
+    <button class="btn btn-primary" id="submitBtn" onclick="submitTranscription()" disabled>🚀 开始识别</button>
+    <span class="progress-text" id="progressText"></span>
+  </div>
+</div>
+
+<!-- Results -->
+<div class="card">
+  <div class="section-title">识别结果</div>
+  <div id="resultsContainer">
+    <div class="empty-state">
+      <div class="empty-icon">📊</div>
+      <div>选择模型并上传音频后，结果将显示在这里</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MODELS = [
+  { id: "paraformer-zh",    name: "Paraformer-zh v2",         badge: "FunASR" },
+  { id: "funasr-nano-2512", name: "Fun-ASR-Nano-2512",        badge: "FunASR" },
+  { id: "qwen3-asr-1.7b",  name: "Qwen3-ASR-1.7B",           badge: "HF" },
+  { id: "cohere-transcribe",name: "cohere-transcribe-03-2026",badge: "HF" },
+];
+
+let selectedFile = null;
+let recordedBlob = null;
+let mediaRecorder = null;
+let recChunks = [];
+let recInterval = null;
+let recSeconds = 0;
+let modelLoadStatus = {};
+
+// Init model grid
+function initModelGrid() {
+  const grid = document.getElementById("modelGrid");
+  MODELS.forEach(m => {
+    const label = document.createElement("label");
+    label.className = "model-checkbox";
+    label.id = `model-label-${m.id}`;
+    label.innerHTML = `
+      <input type="checkbox" name="model" value="${m.id}" checked onchange="checkSubmitReady()"/>
+      <span>${m.name}</span>
+      <span class="badge" id="badge-${m.id}">${m.badge}</span>
+    `;
+    grid.appendChild(label);
+  });
+  pollModelStatus();
+}
+
+// Poll model load status every 10s
+async function pollModelStatus() {
+  try {
+    const r = await fetch("/api/models/status");
+    const data = await r.json();
+    modelLoadStatus = data.models || {};
+    let loadedCount = 0;
+    for (const [id, info] of Object.entries(modelLoadStatus)) {
+      const badge = document.getElementById(`badge-${id}`);
+      const label = document.getElementById(`model-label-${id}`);
+      if (badge) {
+        badge.textContent = info.loaded ? "✓ 已加载" : "未加载";
+        if (info.loaded) {
+          label.classList.add("loaded");
+          loadedCount++;
+        } else {
+          label.classList.remove("loaded");
+        }
+      }
+    }
+    document.getElementById("modelStatus").textContent = `${loadedCount}/${MODELS.length} 模型已加载至 GPU`;
+  } catch(e) {}
+  setTimeout(pollModelStatus, 10000);
+}
+
+function toggleSelectAll() {
+  const cbs = document.querySelectorAll('input[name=model]');
+  const anyUnchecked = [...cbs].some(c => !c.checked);
+  cbs.forEach(c => c.checked = anyUnchecked);
+  document.getElementById("selectAllBtn").textContent = anyUnchecked ? "取消全选" : "全选";
+  checkSubmitReady();
+}
+
+function getSelectedModels() {
+  return [...document.querySelectorAll('input[name=model]:checked')].map(c => c.value);
+}
+
+function checkSubmitReady() {
+  const hasModels = getSelectedModels().length > 0;
+  const hasAudio = selectedFile !== null || recordedBlob !== null;
+  document.getElementById("submitBtn").disabled = !(hasModels && hasAudio);
+}
+
+// File upload
+function onDragOver(e) { e.preventDefault(); document.getElementById("uploadZone").classList.add("drag-over"); }
+function onDragLeave(e) { document.getElementById("uploadZone").classList.remove("drag-over"); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById("uploadZone").classList.remove("drag-over");
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+}
+function onFileChange(e) { if (e.target.files[0]) setFile(e.target.files[0]); }
+function setFile(f) {
+  selectedFile = f;
+  recordedBlob = null;
+  const sel = document.getElementById("fileSelected");
+  sel.textContent = `✓ ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`;
+  sel.style.display = "block";
+  document.getElementById("playRecBtn").style.display = "none";
+  checkSubmitReady();
+}
+
+// Recording
+async function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recChunks = [];
+    recSeconds = 0;
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(recInterval);
+      recordedBlob = new Blob(recChunks, { type: "audio/webm" });
+      selectedFile = null;
+      document.getElementById("fileSelected").style.display = "none";
+      document.getElementById("recBtn").textContent = "🎤 开始录音";
+      document.getElementById("recIndicator").style.display = "none";
+      document.getElementById("recTimer").style.display = "none";
+      document.getElementById("playRecBtn").style.display = "inline-block";
+      checkSubmitReady();
+    };
+    mediaRecorder.start(100);
+    recInterval = setInterval(() => {
+      recSeconds++;
+      const m = String(Math.floor(recSeconds/60)).padStart(2,"0");
+      const s = String(recSeconds%60).padStart(2,"0");
+      document.getElementById("recTimer").textContent = `${m}:${s}`;
+    }, 1000);
+    document.getElementById("recBtn").textContent = "⏹ 停止录音";
+    document.getElementById("recIndicator").style.display = "inline-flex";
+    document.getElementById("recTimer").style.display = "inline";
+    document.getElementById("recTimer").textContent = "00:00";
+  } catch(e) {
+    alert("无法访问麦克风: " + e.message);
+  }
+}
+
+let recAudioUrl = null;
+function playRecording() {
+  if (!recordedBlob) return;
+  if (recAudioUrl) URL.revokeObjectURL(recAudioUrl);
+  recAudioUrl = URL.createObjectURL(recordedBlob);
+  new Audio(recAudioUrl).play();
+}
+
+// Transcription
+async function submitTranscription() {
+  const models = getSelectedModels();
+  if (!models.length) { alert("请选择至少一个模型"); return; }
+
+  const audioBlob = recordedBlob || selectedFile;
+  if (!audioBlob) { alert("请上传文件或录制音频"); return; }
+
+  const submitBtn = document.getElementById("submitBtn");
+  const progressText = document.getElementById("progressText");
+  submitBtn.disabled = true;
+  progressText.textContent = "⏳ 正在上传并识别，请稍候...";
+
+  showLoadingSkeleton(models);
+
+  try {
+    const formData = new FormData();
+    const filename = selectedFile ? selectedFile.name : "recording.webm";
+    formData.append("file", audioBlob, filename);
+    formData.append("models", models.join(","));
+
+    const startTime = Date.now();
+    const resp = await fetch("/api/transcribe", { method: "POST", body: formData });
+    const wallMs = Date.now() - startTime;
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: "Unknown error" }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    progressText.textContent = `✅ 完成 (总耗时 ${(wallMs/1000).toFixed(1)}s)`;
+    renderResults(data.results);
+  } catch(e) {
+    progressText.textContent = `❌ 错误: ${e.message}`;
+    clearSkeleton();
+  } finally {
+    submitBtn.disabled = false;
+    checkSubmitReady();
+  }
+}
+
+function showLoadingSkeleton(models) {
+  const tbody = `<table class="results-table">
+    <thead><tr>
+      <th>模型</th><th>识别文本</th><th>耗时</th><th>状态</th>
+    </tr></thead>
+    <tbody>
+      ${models.map(id => {
+        const m = MODELS.find(x => x.id === id) || { name: id };
+        return `<tr class="skeleton-row" id="row-${id}">
+          <td class="model-name">${m.name}</td>
+          <td><div class="skeleton"></div></td>
+          <td><div class="skeleton" style="width:60px"></div></td>
+          <td><span class="status-badge status-wait">⏳ 处理中</span></td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table>`;
+  document.getElementById("resultsContainer").innerHTML = tbody;
+}
+
+function clearSkeleton() {
+  document.getElementById("resultsContainer").innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div>识别失败，请检查控制台</div></div>`;
+}
+
+function renderResults(results) {
+  if (!results || !results.length) { clearSkeleton(); return; }
+
+  const rows = results.map((r, i) => {
+    const statusBadge = r.success
+      ? `<span class="status-badge status-ok">✓ 成功</span>`
+      : `<span class="status-badge status-err">✗ 失败</span>`;
+    const textId = `text-${i}`;
+    const isLong = (r.text || "").length > 200;
+    const textHtml = `
+      <div class="text-content ${isLong ? 'collapsed' : ''}" id="${textId}">${escapeHtml(r.text || "（无结果）")}</div>
+      ${isLong ? `<button class="expand-btn" id="expbtn-${i}" onclick="toggleExpand(${i})">展开全文 ▼</button>` : ""}
+      ${r.error ? `<div class="error-text">错误: ${escapeHtml(r.error)}</div>` : ""}
+    `;
+    return `<tr>
+      <td class="model-name">${escapeHtml(r.model_name || r.model_id)}</td>
+      <td class="text-cell">${textHtml}</td>
+      <td class="duration">${r.duration_ms ? r.duration_ms.toLocaleString() + " ms" : "—"}</td>
+      <td>${statusBadge}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("resultsContainer").innerHTML = `
+    <table class="results-table">
+      <thead><tr><th>模型</th><th>识别文本</th><th>耗时</th><th>状态</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function toggleExpand(i) {
+  const el = document.getElementById(`text-${i}`);
+  const btn = document.getElementById(`expbtn-${i}`);
+  if (el.classList.toggle("collapsed")) {
+    btn.textContent = "展开全文 ▼";
+  } else {
+    btn.textContent = "收起 ▲";
+  }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// Load example audio URL as a File-like Blob into the upload area
+async function useExample(url, filename) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const file = new File([blob], filename, { type: blob.type || "audio/wav" });
+    setFile(file);
+    // Scroll to upload zone for visual confirmation
+    document.getElementById("uploadZone").scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (e) {
+    alert("无法加载示例音频: " + e.message);
+  }
+}
+
+initModelGrid();
+</script>
+</body>
+</html>

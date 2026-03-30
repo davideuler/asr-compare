@@ -1,0 +1,15 @@
+funasr
+modelscope
+transformers>=4.40.0
+torch
+torchaudio
+accelerate
+sentencepiece
+protobuf
+soundfile
+librosa
+huggingface_hub
+fastapi
+uvicorn[standard]
+python-multipart
+pydub
